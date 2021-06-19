@@ -18,7 +18,7 @@ import (
 )
 
 var reverseProxyFunc ReverseProxyFunc
-var httpPort, grpcPort uint16
+var httpPort, grpcPort uint
 var shutdownFunc func()
 
 func init() {
@@ -47,6 +47,8 @@ func TestNewService(t *testing.T) {
 		Up:    true,
 	}
 	redoc.AddSpec("PetStore", "https://rebilly.github.io/ReDoc/swagger.yaml")
+	redoc.AddSpec("Service", "/demo.swagger.json")
+	redoc.AddSpec("Service2", "/demo.swagger.json") // it will not add a duplicate route
 
 	// add the /test endpoint
 	route := Route{
@@ -65,7 +67,8 @@ func TestNewService(t *testing.T) {
 		WithLogger(LoggerFunc(log.Printf)),
 	)
 
-	newRoute := Route{
+	// add the /health endpoint
+	healthRoute := Route{
 		Method: "GET",
 		Path:   "/health",
 		Handler: func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
@@ -74,7 +77,14 @@ func TestNewService(t *testing.T) {
 			w.Write([]byte("OK"))
 		},
 	}
-	s.AddRoutes(newRoute)
+	s.AddRoutes(healthRoute)
+
+	noRoute := Route{
+		Method:  "GET",
+		Path:    "/404",
+		Handler: s.ServeFile,
+	}
+	s.AddRoutes(noRoute)
 
 	go func() {
 		err := s.Start(httpPort, grpcPort, reverseProxyFunc)
@@ -111,7 +121,7 @@ func TestNewService(t *testing.T) {
 	should.NoError(err)
 	should.Equal(http.StatusOK, resp.StatusCode)
 
-	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/fake.swagger.json", httpPort))
+	resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%d/404", httpPort))
 	should.NoError(err)
 	should.Equal(http.StatusNotFound, resp.StatusCode)
 

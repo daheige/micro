@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -151,7 +152,7 @@ func (s *Service) Getpid() int {
 }
 
 // Start starts the microservice with listening on the ports
-func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
+func (s *Service) Start(httpPort uint, grpcPort uint, reverseProxyFunc ReverseProxyFunc) error {
 
 	// intercept interrupt signals
 	sigChan := make(chan os.Signal, 1)
@@ -191,7 +192,7 @@ func (s *Service) Start(httpPort uint16, grpcPort uint16, reverseProxyFunc Rever
 	}
 }
 
-func (s *Service) startGRPCServer(grpcPort uint16) error {
+func (s *Service) startGRPCServer(grpcPort uint) error {
 	// register reflection service on gRPC server.
 	reflection.Register(s.GRPCServer)
 
@@ -204,8 +205,10 @@ func (s *Service) startGRPCServer(grpcPort uint16) error {
 	return s.GRPCServer.Serve(lis)
 }
 
-func (s *Service) startGRPCGateway(httpPort uint16, grpcPort uint16, reverseProxyFunc ReverseProxyFunc) error {
+func (s *Service) startGRPCGateway(httpPort uint, grpcPort uint, reverseProxyFunc ReverseProxyFunc) error {
 	if s.redoc.Up {
+		s.redoc.EnsureDefaults()
+
 		// add redoc endpoint for api docs
 		routeDocs := Route{
 			Method: "GET",
@@ -214,31 +217,27 @@ func (s *Service) startGRPCGateway(httpPort uint16, grpcPort uint16, reverseProx
 				s.redoc.Serve(w, r, pathParams)
 			},
 		}
-		s.routes = append(s.routes, routeDocs)
+		s.AddRoutes(routeDocs)
+
+		// host local spec files if not set yet
+		for _, url := range s.redoc.SpecURLs {
+			if strings.HasPrefix(url, "/") {
+				fileRoute := Route{
+					Method:  "GET",
+					Path:    url,
+					Handler: s.ServeFile,
+				}
+				if !s.HasRoute(fileRoute) {
+					s.AddRoutes(fileRoute)
+				}
+			}
+		}
 	}
 
 	err := reverseProxyFunc(context.Background(), s.mux, fmt.Sprintf("localhost:%d", grpcPort), s.grpcDialOptions)
 	if err != nil {
 		return err
 	}
-
-	// this is the fallback handler that will serve static files,
-	// if file does not exist, then a 404 error will be returned.
-	s.mux.Handle("GET", AllPattern(), func(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
-		dir := s.staticDir
-		if s.staticDir == "" {
-			dir, _ = os.Getwd()
-		}
-
-		// check if the file exists and fobid showing directory
-		path := filepath.Join(dir, r.URL.Path)
-		if fileInfo, err := os.Stat(path); os.IsNotExist(err) || fileInfo.IsDir() {
-			http.NotFound(w, r)
-			return
-		}
-
-		http.ServeFile(w, r, path)
-	})
 
 	// apply routes
 	for _, route := range s.routes {
@@ -279,4 +278,32 @@ func (s *Service) Stop() {
 // AddRoutes adds additional routes
 func (s *Service) AddRoutes(routes ...Route) {
 	s.routes = append(s.routes, routes...)
+}
+
+// HasRoute checks if a route already exists
+func (s *Service) HasRoute(route Route) bool {
+	for _, r := range s.routes {
+		if r.Method == route.Method && r.Path == route.Path {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ServeFile serves a file
+func (s *Service) ServeFile(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
+	dir := s.staticDir
+	if s.staticDir == "" {
+		dir, _ = os.Getwd()
+	}
+
+	// check if the file exists and fobid showing directory
+	path := filepath.Join(dir, r.URL.Path)
+	if fileInfo, err := os.Stat(path); os.IsNotExist(err) || fileInfo.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+
+	http.ServeFile(w, r, path)
 }

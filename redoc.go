@@ -8,7 +8,8 @@ import (
 
 // RedocOpts is configures for redoc
 type RedocOpts struct {
-	// Route is the route in http server, DO NOT include / at the beginning
+	// Route is the route in http server, should include / at the beginning, default is /docs.
+	// Currently it can not be root route "/", see https://github.com/grpc-ecosystem/grpc-gateway/issues/1909
 	Route string
 	// SpecURLs are the urls to find the spec for, format: name -> url
 	SpecURLs map[string]string
@@ -20,7 +21,12 @@ type RedocOpts struct {
 	Up bool
 }
 
-func (redoc *RedocOpts) ensureDefaults() {
+// EnsureDefaults sets default redoc options
+func (redoc *RedocOpts) EnsureDefaults() {
+	if redoc.Route == "" || redoc.Route == "/" {
+		redoc.Route = "/docs"
+	}
+
 	if redoc.SpecURLs == nil {
 		redoc.AddSpec("Service", "/swagger.json")
 	}
@@ -48,7 +54,7 @@ func (redoc *RedocOpts) AddSpec(name, url string) *RedocOpts {
 // Serve is the HandlerFunc for Redoc
 func (redoc *RedocOpts) Serve(w http.ResponseWriter, r *http.Request, pathParams map[string]string) {
 
-	redoc.ensureDefaults()
+	redoc.EnsureDefaults()
 
 	tmpl := template.Must(template.New("redoc").Parse(redocTemplate))
 

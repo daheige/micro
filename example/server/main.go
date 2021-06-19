@@ -63,7 +63,7 @@ func main() {
 		log.Println("Server shutting down")
 	}
 
-	// init redoc, enable api docs on http://localhost:8888
+	// init redoc, enable api docs on http://localhost:8888/docs
 	redoc := &micro.RedocOpts{
 		Up: true,
 	}
@@ -153,7 +153,7 @@ func main() {
 
 	// run insecure server 1
 	go func() {
-		var httpPort, grpcPort uint16
+		var httpPort, grpcPort uint
 		httpPort = 8888
 		grpcPort = 9999
 		errChan <- s.Start(httpPort, grpcPort, reverseProxyFunc)
@@ -161,7 +161,7 @@ func main() {
 
 	// run tls server 2
 	go func() {
-		var httpPort, grpcPort uint16
+		var httpPort, grpcPort uint
 		httpPort = 18888
 		grpcPort = 19999
 		errChan <- s2.Start(httpPort, grpcPort, reverseProxyFunc)
@@ -169,7 +169,7 @@ func main() {
 
 	// run mutual tls server 3
 	go func() {
-		var httpPort, grpcPort uint16
+		var httpPort, grpcPort uint
 		httpPort = 28888
 		grpcPort = 29999
 		errChan <- s3.Start(httpPort, grpcPort, reverseProxyFunc)
